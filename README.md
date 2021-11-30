@@ -15,6 +15,8 @@ from string import ascii_lowercase
 
 from urllib.parse import urlparse
 
+from botocore.exceptions import ClientError
+
 
 
 # Assumptions
