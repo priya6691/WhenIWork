@@ -6,15 +6,19 @@ import io
 import os
 from string import ascii_lowercase
 from urllib.parse import urlparse
+from botocore.exceptions import ClientError
 
 def merge_files_from_url(path):
 
     master = pd.DataFrame()
 
     ## Iterate through ascii lowercase and generate file paths
-    for c in ascii_lowercase:
-        file = path + c + ".csv"
-        master = master.append(pd.read_csv(file))
+    try:
+        for c in ascii_lowercase:
+            file = path + c + ".csv"
+            master = master.append(pd.read_csv(file))
+    except OSError as err:
+        print("OS error: {0}".format(err))
 
     if master.empty:
         ## When no files available to process create an empty file and return
@@ -34,19 +38,28 @@ def merge_files_from_s3(bucket):
 
     # Please provide a valid access key id and key for authentication
     s3_client = boto3.client('s3', aws_access_key_id='<aws_access_key_id>',
-                             aws_secret_access_key='<aws_secret_access_key>')
+                             aws_secret_access_key='<aws_access_key_id>')
+
+    try:
+        s3_client.head_bucket(Bucket=bucket)
+    except ClientError:
+        print("The bucket does not exist or cannot be accessed. Please try with a valid bucket")
 
     result = s3_client.list_objects_v2(Bucket=bucket, Delimiter='/*')
     master = pd.DataFrame()
 
-    for r in result["Contents"]:
-        response = s3_client.get_object(Bucket=bucket, Key=r["Key"])
-        master = master.append(pd.read_csv(io.BytesIO(response['Body'].read())))
+    try:
+        for r in result["Contents"]:
+            response = s3_client.get_object(Bucket=bucket, Key=r["Key"])
+            master = master.append(pd.read_csv(io.BytesIO(response['Body'].read())))
+    except BaseException as err:
+        print(f"Unexpected {err=}, {type(err)=}")
+        raise
 
     if master.empty:
         ## When no files available to process create an empty file and return
         master.to_csv('MergedFromS3.csv')
-        print('Files are processed and merged file is successfully created in the path :', os.getcwd(), 'File name : MergedFromS3.csv')
+        print('Empty file created in the path', os.getcwd(), 'File name : MergedFromS3.csv')
         return ()
 
     transposed = master.pivot(index='user_id', columns='path', values='length').reset_index()
